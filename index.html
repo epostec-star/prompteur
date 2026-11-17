@@ -59,6 +59,8 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 .note.alerte{color:#ffb4a8}
 #panneau-pedale{background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:14px;margin:10px 0}
 #touche-recue{font-size:22px;font-weight:700;margin:8px 0;min-height:30px}
+.installer{background:#241b3a;border:1px solid var(--accent);border-radius:12px;padding:12px 14px;margin:0 0 12px;font-size:15px;line-height:1.45}
+.installer ol{margin:6px 0 10px;padding-left:20px}.installer li{margin:4px 0}
 
 /* ÉCRAN DE LECTURE */
 #lecture{position:fixed;inset:0;background:var(--fond);overflow:hidden}
@@ -108,6 +110,16 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 
 <section id="edition">
   <h1>Prompteur</h1>
+  <div id="installer" class="installer" hidden>
+    <b>Pour l'avoir comme une app sur ton iPhone</b>
+    <ol>
+      <li>Touche le bouton <b>•••</b> en bas de Safari, à droite de l'adresse. Sur un iPhone plus ancien, c'est le bouton Partager, le carré avec une flèche.</li>
+      <li>Touche <b>Partager</b> si tu le vois, puis <b>Sur l'écran d'accueil</b>. Fais défiler la liste vers le bas si tu ne le trouves pas.</li>
+      <li>Si un réglage « Ouvrir comme app web » apparaît, laisse-le allumé. Touche <b>Ajouter</b>.</li>
+      <li>Ferme Safari et ouvre le Prompteur par sa nouvelle icône violette. Colle ton texte là : ce que tu colles ici ne suit pas dans l'app.</li>
+    </ol>
+    <button id="masquer-installer">J'ai compris</button>
+  </div>
   <div class="ligne">
     <select id="liste" aria-label="Mes textes"></select>
     <button id="nouveau">Nouveau</button>
@@ -599,6 +611,14 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   });
   $('info-veille').hidden = ('wakeLock' in navigator);
   $('info-https').hidden = window.isSecureContext;
+  // iPhone : expliquer comment l'installer, tant que la page n'est pas ouverte depuis son icône
+  var estApp = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  var estIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var dejaVu = false; try { dejaVu = localStorage.getItem('prompteur.installer-vu') === '1'; } catch (_) {}
+  $('installer').hidden = estApp || !estIOS || dejaVu;
+  $('masquer-installer').addEventListener('click', function () {
+    $('installer').hidden = true; try { localStorage.setItem('prompteur.installer-vu', '1'); } catch (_) {}
+  });
 
   window.addEventListener('pagehide', sauver);
   majListe(); afficherTexte(); majReglages(); majTouches();
