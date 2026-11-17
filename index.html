@@ -28,7 +28,7 @@
 :root{
   --fond:#000; --encre:#fff; --doux:#9a9aa3; --carte:#16161a; --bord:#2a2a31;
   --accent:#7c4dd6; --repere:#e8b84b; --rouge:#e5322d; --taille:36px;
-  --haut-texte:calc(env(safe-area-inset-top) + 6vh);
+  --haut-texte:calc(env(safe-area-inset-top) + 9vh);
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--fond);color:var(--encre);
@@ -64,7 +64,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 
 /* ÉCRAN DE LECTURE */
 #lecture{position:fixed;inset:0;background:var(--fond);overflow:hidden}
-#camera{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:0}
+#camera{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:0}
 #lecture.selfie #camera{transform:scaleX(-1)}
 #defile{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;z-index:1}
 #defile::-webkit-scrollbar{display:none}
@@ -84,10 +84,12 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 #barre .valeur{align-self:center;min-width:80px;text-align:center;font-size:15px;color:var(--doux)}
 
 /* MODE FILMER : le texte en haut, près de l'objectif */
-#lecture.camera #defile{bottom:auto;height:46%;background:rgba(0,0,0,.45)}
-#lecture.camera #contenu{padding:var(--haut-texte) 6vw 40vh}
+#lecture.camera #defile{background:rgba(0,0,0,.5);-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 170px),transparent calc(100% - 115px));mask-image:linear-gradient(to bottom,#000 calc(100% - 170px),transparent calc(100% - 115px))}
+#lecture.camera #contenu{padding:var(--haut-texte) 6vw 90vh;text-shadow:0 2px 6px rgba(0,0,0,.85)}
 #lecture.camera .repere{top:var(--haut-texte)}
-#lecture.camera #barre{top:46%;bottom:auto;background:none;padding:10px}
+#lecture.camera #barre{bottom:calc(env(safe-area-inset-bottom) + 112px);background:none;padding:10px}
+#retour{position:absolute;top:calc(env(safe-area-inset-top) + 8px);left:10px;z-index:5;background:rgba(0,0,0,.6);min-height:38px;padding:6px 14px;font-size:15px}
+#infos-camera{position:absolute;top:calc(env(safe-area-inset-top) + 16px);right:12px;z-index:5;font-size:12px;color:#ddd;text-shadow:0 1px 3px #000;pointer-events:none}
 #lecture.camera #barre .valeur{color:#fff;text-shadow:0 1px 3px #000}
 #commandes-film{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 18px);z-index:3;
   display:flex;align-items:center;justify-content:center;gap:26px}
@@ -152,17 +154,20 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   <p class="note alerte" id="info-https" hidden>Pour filmer, la page doit être ouverte à une adresse sécurisée, qui commence par https. À cette adresse-ci, seule la lecture sans filmer marche.</p>
   <div class="ligne"><button class="principal" id="filmer">Filmer avec le texte</button></div>
   <div class="ligne"><button id="lire" class="large">Lire sans filmer</button></div>
+  <p class="note" id="version">Version du 17/11 à 18h26</p>
 </section>
 
 <section id="lecture" hidden>
   <video id="camera" playsinline muted autoplay hidden></video>
   <div id="defile"><div id="contenu"></div></div>
+  <button id="retour">‹ Textes</button>
+  <div id="infos-camera" hidden></div>
   <div class="repere gauche"></div><div class="repere droite"></div>
   <div id="etat" hidden>Pause</div>
   <div id="decompte" hidden></div>
   <div id="barre" hidden>
-    <button id="retour">Textes</button>
     <button id="debut">Début</button>
+    <button id="reculer-bouton">Reculer</button>
     <button data-regle="vitesse" data-pas="-1">Vitesse −</button>
     <span class="valeur" id="v-vitesse-l"></span>
     <button data-regle="vitesse" data-pas="1">Vitesse +</button>
@@ -310,6 +315,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     $('retourner').hidden = rec || decompteEnCours;
     $('chrono').classList.toggle('en-cours', rec);
     $('rec').classList.toggle('en-cours', rec);
+    $('infos-camera').hidden = !modeCamera || rec || !$('infos-camera').textContent;
   }
   function boucle(t) {
     if (!enLecture) return;
@@ -380,6 +386,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   $('retour').addEventListener('click', function (e) { e.stopPropagation(); quitter(); });
   $('debut').addEventListener('click', function (e) { e.stopPropagation(); allerAuDebut(); });
   $('reprendre').addEventListener('click', function (e) { e.stopPropagation(); basculer(); });
+  $('reculer-bouton').addEventListener('click', function (e) { e.stopPropagation(); reculer(); });
 
   // toucher le texte : un tap met en pause ou relance ; glisser pour retrouver sa place
   defile.addEventListener('pointerdown', function () {
@@ -410,19 +417,45 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     if (flux) flux.getTracks().forEach(function (t) { t.stop(); });
     flux = null; video.srcObject = null;
   }
+  // 4:3 = tout le champ du capteur, sans recadrage (les formats 16:9 de la caméra avant sont recadrés)
+  function contraintesVideo(enHauteur) {
+    return { facingMode: faceAvant ? 'user' : 'environment',
+             width: { ideal: enHauteur ? 1440 : 1920 }, height: { ideal: enHauteur ? 1920 : 1440 }, frameRate: { ideal: 30 } };
+  }
+  function ouvrirFlux(enHauteur) {
+    return navigator.mediaDevices.getUserMedia({
+      video: contraintesVideo(enHauteur), audio: { echoCancellation: false, noiseSuppression: false }
+    }).then(function (f) {
+      flux = f; video.srcObject = f; lecture.classList.toggle('selfie', faceAvant);
+      var p = video.play(); if (p && p.catch) p.catch(function () {});
+      return true;
+    });
+  }
+  function dimensionsImage() {
+    return new Promise(function (fini) {
+      var n = 0;
+      (function attendre() {
+        if (video.videoWidth || n++ > 60) fini([video.videoWidth, video.videoHeight]); else setTimeout(attendre, 50);
+      })();
+    });
+  }
   function allumerCamera() {
-    cacherMessage();
+    cacherMessage(); $('infos-camera').textContent = '';
     if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       montrerMessage('Pour filmer, la page doit être ouverte à une adresse sécurisée, qui commence par https. Ici, seule la lecture sans filmer marche.');
       return Promise.resolve(false);
     }
     arreterCamera();
-    return navigator.mediaDevices.getUserMedia({
-      video: { facingMode: faceAvant ? 'user' : 'environment', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
-      audio: { echoCancellation: false, noiseSuppression: false }
-    }).then(function (f) {
-      flux = f; video.srcObject = f; lecture.classList.toggle('selfie', faceAvant);
-      var p = video.play(); if (p && p.catch) p.catch(function () {});
+    var ecranDebout = window.innerHeight >= window.innerWidth;
+    return ouvrirFlux(false).then(dimensionsImage).then(function (d) {
+      if (ecranDebout && d[0] > d[1]) {        // image couchée sur un téléphone debout : on la redemande debout
+        arreterCamera();
+        return ouvrirFlux(true).then(dimensionsImage);
+      }
+      return d;
+    }).then(function (d) {
+      if (d[0] && d[1]) $('infos-camera').textContent = 'Image filmée : ' + d[0] + ' × ' + d[1] + (d[1] >= d[0] ? ', verticale' : ', horizontale');
+      poserEtat();
       return true;
     }).catch(function (e) {
       var n = e && e.name;
