@@ -44,7 +44,8 @@ select{font:inherit;color:inherit;background:var(--carte);border:1px solid var(-
 /* ÉCRAN DES TEXTES */
 #edition{max-width:640px;margin:0 auto;
   padding:calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 24px)}
-h1{font-size:24px;margin:4px 0 12px}
+h1{font-size:24px;margin:0}
+.entete{justify-content:space-between;margin:4px 0 12px}
 .ligne{display:flex;gap:8px;align-items:center;margin:10px 0}
 .ligne > select{flex:1;min-width:0}
 .ligne > button.large{flex:1}
@@ -115,7 +116,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 <body>
 
 <section id="edition">
-  <h1>Prompteur</h1>
+  <div class="ligne entete"><h1>Prompteur</h1><button id="rafraichir">↻ Rafraîchir</button></div>
   <div id="installer" class="installer" hidden>
     <b>Pour l'avoir comme une app sur ton iPhone</b>
     <ol>
@@ -158,7 +159,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   <p class="note alerte" id="info-https" hidden>Pour filmer, la page doit être ouverte à une adresse sécurisée, qui commence par https. À cette adresse-ci, seule la lecture sans filmer marche.</p>
   <div class="ligne"><button class="principal" id="filmer">Filmer avec le texte</button></div>
   <div class="ligne"><button id="lire" class="large">Lire sans filmer</button></div>
-  <p class="note" id="version">Version du 17/11 à 18h38</p>
+  <p class="note" id="version">Version du 17/11 à 18h42</p>
 </section>
 
 <section id="lecture" hidden>
@@ -690,6 +691,10 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   });
 
   window.addEventListener('pagehide', sauver);
+  // recharger la dernière version (l'app installée n'a pas le bouton de Safari) · les textes sont gardés
+  $('rafraichir').addEventListener('click', function () {
+    sauver(); window.location.replace(window.location.pathname + '?v=' + Date.now());
+  });
   majListe(); afficherTexte(); majReglages(); majTouches();
 })();
 </script>
