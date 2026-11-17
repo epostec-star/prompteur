@@ -29,6 +29,7 @@
   --fond:#000; --encre:#fff; --doux:#9a9aa3; --carte:#16161a; --bord:#2a2a31;
   --accent:#7c4dd6; --repere:#e8b84b; --rouge:#e5322d; --taille:36px;
   --haut-texte:calc(env(safe-area-inset-top) + 9vh);
+  --bande:32vh; --fond-texte:.45;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--fond);color:var(--encre);
@@ -88,8 +89,10 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 #barre .valeur{align-self:center;min-width:80px;text-align:center;font-size:15px;color:var(--doux)}
 
 /* MODE FILMER : le texte en haut, près de l'objectif */
-#lecture.camera #defile{background:rgba(0,0,0,.22);-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 170px),transparent calc(100% - 115px));mask-image:linear-gradient(to bottom,#000 calc(100% - 170px),transparent calc(100% - 115px))}
-#lecture.camera #contenu{padding:var(--haut-texte) 6vw 90vh;text-shadow:0 0 3px #000,0 0 3px #000,0 2px 8px #000}
+#lecture.camera #defile{bottom:auto;height:var(--bande);background:rgba(0,0,0,var(--fond-texte));-webkit-mask-image:linear-gradient(to bottom,#000 82%,transparent);mask-image:linear-gradient(to bottom,#000 82%,transparent)}
+#lecture.camera #contenu{padding:var(--haut-texte) 6vw calc(var(--bande) - var(--haut-texte));text-shadow:0 0 3px #000,0 0 3px #000,0 2px 8px #000}
+#poignee{position:absolute;left:50%;top:var(--bande);transform:translate(-50%,-50%);width:150px;height:36px;z-index:4;display:flex;align-items:center;justify-content:center;touch-action:none;cursor:ns-resize}
+#poignee::after{content:"";width:64px;height:6px;border-radius:3px;background:rgba(255,255,255,.92);box-shadow:0 1px 4px rgba(0,0,0,.8)}
 #lecture.camera .repere{top:var(--haut-texte)}
 #lecture.camera #barre{bottom:calc(env(safe-area-inset-bottom) + 112px);background:none;padding:10px}
 #retour{position:absolute;top:calc(env(safe-area-inset-top) + 8px);left:10px;z-index:5;background:rgba(0,0,0,.6);min-height:38px;padding:6px 14px;font-size:15px}
@@ -159,7 +162,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   <p class="note alerte" id="info-https" hidden>Pour filmer, la page doit être ouverte à une adresse sécurisée, qui commence par https. À cette adresse-ci, seule la lecture sans filmer marche.</p>
   <div class="ligne"><button class="principal" id="filmer">Filmer avec le texte</button></div>
   <div class="ligne"><button id="lire" class="large">Lire sans filmer</button></div>
-  <p class="note" id="version">Version du 17/11 à 18h42</p>
+  <p class="note" id="version">Version du 17/11 à 19h08</p>
 </section>
 
 <section id="lecture" hidden>
@@ -167,6 +170,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   <canvas id="toile" width="1080" height="1920" hidden></canvas>
   <div id="defile"><div id="contenu"></div></div>
   <button id="retour">‹ Textes</button>
+  <div id="poignee" class="seulement-camera" title="Tire pour agrandir ou réduire la zone du texte"></div>
   <div id="infos-camera" hidden></div>
   <div class="repere gauche"></div><div class="repere droite"></div>
   <div id="etat" hidden>Pause</div>
@@ -182,6 +186,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     <button data-regle="zoom" data-pas="-0.1" class="seulement-camera">Zoom −</button>
     <span class="valeur seulement-camera" id="v-zoom"></span>
     <button data-regle="zoom" data-pas="0.1" class="seulement-camera">Zoom +</button>
+    <button id="fond" class="seulement-camera">Fond : moyen</button>
     <button id="reprendre">Reprendre</button>
   </div>
   <div id="commandes-film" hidden>
@@ -192,7 +197,10 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   <div id="message" hidden></div>
   <div id="revue" hidden>
     <video id="prise" playsinline controls></video>
+    <p class="note" id="infos-prise"></p>
     <div class="ligne"><button class="principal" id="sauver-video">Enregistrer dans Photos</button></div>
+    <p class="note" id="aide-sauver">Dans le menu qui s'ouvre, touche « Enregistrer la vidéo ». Fais défiler le menu vers le bas si tu ne la vois pas.</p>
+    <p class="note alerte" id="etat-sauver" hidden></p>
     <div class="ligne"><button id="refaire" class="large">Effacer</button><button id="revue-textes" class="large">Textes</button></div>
   </div>
 </section>
@@ -206,6 +214,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     reculer: ['PageUp', 'ArrowUp', 'ArrowLeft']
   };
   var BORNES = { taille: [20, 90], vitesse: [1, 15], zoom: [1, 2.5] };
+  var FONDS = [[0.25, 'léger'], [0.45, 'moyen'], [0.65, 'foncé']];   // le fond derrière le texte, en mode filmer
   var $ = function (id) { return document.getElementById(id); };
   var nouvelId = function () { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); };
   var copie = function (o) { return JSON.parse(JSON.stringify(o)); };
@@ -214,7 +223,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   function etatInitial() {
     var id = nouvelId();
     return { textes: [{ id: id, texte: '' }], courant: id, taille: 36, vitesse: 3,
-             miroir: false, decompte: true, zoom: 1, touches: copie(DEFAUT_TOUCHES) };
+             miroir: false, decompte: true, zoom: 1, bande: 32, fond: 1, touches: copie(DEFAUT_TOUCHES) };
   }
   function charger() {
     var base = etatInitial();
@@ -280,6 +289,10 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     $('v-vitesse').textContent = E.vitesse;
     $('v-vitesse-l').textContent = 'Vitesse ' + E.vitesse;
     $('v-zoom').textContent = 'Zoom ' + E.zoom.toFixed(1).replace('.', ',') + '×';
+    if (!FONDS[E.fond]) E.fond = 1;
+    document.documentElement.style.setProperty('--fond-texte', String(FONDS[E.fond][0]));
+    $('fond').textContent = 'Fond : ' + FONDS[E.fond][1];
+    appliquerBande();
     $('miroir').checked = E.miroir;
     $('avec-decompte').checked = E.decompte;
     document.documentElement.style.setProperty('--taille', E.taille + 'px');
@@ -399,6 +412,26 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   $('debut').addEventListener('click', function (e) { e.stopPropagation(); allerAuDebut(); });
   $('reprendre').addEventListener('click', function (e) { e.stopPropagation(); basculer(); });
   $('reculer-bouton').addEventListener('click', function (e) { e.stopPropagation(); reculer(); });
+  $('fond').addEventListener('click', function (e) { e.stopPropagation(); E.fond = (E.fond + 1) % FONDS.length; sauver(); majReglages(); });
+  // la zone du texte : une bande en haut, près de l'objectif, que l'on agrandit ou réduit avec la poignée
+  function appliquerBande() {
+    var b = Math.min(75, Math.max(18, Number(E.bande) || 32));
+    document.documentElement.style.setProperty('--bande', Math.round(b / 100 * (window.innerHeight || 800)) + 'px');
+  }
+  window.addEventListener('resize', appliquerBande);
+  var poignee = $('poignee'), tire = false;
+  poignee.addEventListener('pointerdown', function (e) {
+    tire = true; e.preventDefault(); e.stopPropagation();
+    try { poignee.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  poignee.addEventListener('pointermove', function (e) {
+    if (!tire) return;
+    E.bande = Math.min(75, Math.max(18, Math.round(e.clientY / (window.innerHeight || 800) * 100)));
+    appliquerBande();
+  });
+  function lacher() { if (tire) { tire = false; sauver(); } }
+  poignee.addEventListener('pointerup', lacher);
+  poignee.addEventListener('pointercancel', lacher);
 
   // toucher le texte : un tap met en pause ou relance ; glisser pour retrouver sa place
   defile.addEventListener('pointerdown', function () {
@@ -549,6 +582,8 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     var v = $('prise'); if (v.src) URL.revokeObjectURL(v.src); v.src = URL.createObjectURL(prise);
     $('revue').dataset.octets = String(prise.size);
     $('sauver-video').textContent = 'Enregistrer dans Photos';
+    $('etat-sauver').hidden = true;
+    $('infos-prise').textContent = 'Prise de ' + $('chrono').textContent + ' · ' + (prise.size / 1e6).toFixed(1).replace('.', ',') + ' Mo · ' + prise.name.split('.').pop();
     enRevue = true; $('revue').hidden = false; poserEtat();
   }
   $('rec').addEventListener('click', function (e) {
@@ -562,23 +597,31 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   });
   $('retourner').addEventListener('click', function (e) { e.stopPropagation(); faceAvant = !faceAvant; allumerCamera(); });
 
-  function marquerSauvee() { priseSauvee = true; $('sauver-video').textContent = 'Enregistrée ✓ (encore une fois ?)'; }
-  function telecharger() {
+  // on dit toujours ce qui s'est VRAIMENT passé : Photos n'est jamais annoncé si la vidéo est partie ailleurs
+  function direSauvegarde(t) { $('etat-sauver').textContent = t; $('etat-sauver').hidden = false; }
+  function telecharger(raison) {
     var a = document.createElement('a'); a.href = URL.createObjectURL(prise); a.download = prise.name;
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
-    marquerSauvee();
+    priseSauvee = true;
+    direSauvegarde(raison + ' La vidéo est téléchargée : app Fichiers, dossier Téléchargements, nom ' + prise.name + '.');
   }
   $('sauver-video').addEventListener('click', function () {
     if (!prise) return;
-    // sur iPhone : la feuille de partage, puis « Enregistrer la vidéo » range la prise dans Photos
-    if (navigator.canShare && navigator.share && navigator.canShare({ files: [prise] })) {
-      navigator.share({ files: [prise] }).then(marquerSauvee).catch(function (err) {
-        if (!err || err.name !== 'AbortError') telecharger();
+    $('etat-sauver').hidden = true; $('etat-sauver').textContent = '';   // jamais un ancien message lu comme une réponse
+    var fichier = { files: [prise] };
+    // sur iPhone : le menu de partage, où « Enregistrer la vidéo » range la prise dans Photos
+    if (navigator.canShare && navigator.share && navigator.canShare(fichier)) {
+      navigator.share(fichier).then(function () {
+        priseSauvee = true; $('sauver-video').textContent = 'Enregistrer encore une fois';
+        direSauvegarde('Menu fermé. Si tu as touché « Enregistrer la vidéo », elle est dans Photos : vérifie avant d\'effacer.');
+      }).catch(function (err) {
+        if (err && err.name === 'AbortError') { direSauvegarde('Menu fermé sans rien choisir : la vidéo n\'est pas enregistrée.'); return; }
+        telecharger('L\'iPhone a refusé le menu de partage (' + ((err && err.name) || 'erreur inconnue') + ').');
       });
       return;
     }
-    telecharger();
+    telecharger('Ce navigateur ne sait pas envoyer la vidéo dans Photos.');
   });
   function quitterRevue() {
     if (!priseSauvee && !window.confirm('Effacer cette prise ? Elle n\'est pas enregistrée dans Photos.')) return false;
