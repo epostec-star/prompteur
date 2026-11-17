@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Prompteur">
+<meta name="theme-color" content="#000000">
+<title>Prompteur</title>
+<link rel="apple-touch-icon" href="icone.png">
+<link rel="icon" href="icone.png">
+<link rel="manifest" href="manifest.webmanifest">
+<!--
+  Prompteur à pédale · fait pour Emy, novembre 2026.
+  Un seul fichier, aucune ressource extérieure. Les textes restent dans le téléphone (localStorage).
+  Deux modes : « Filmer avec le texte » (caméra + texte qui défile en haut de l'écran, près de l'objectif)
+  et « Lire sans filmer » (texte plein écran, par exemple derrière une vitre de prompteur).
+  Le texte n'apparaît PAS dans la vidéo : seule l'image de la caméra et le son sont enregistrés.
+  La caméra ne s'allume que sur une adresse sécurisée (https) : c'est une règle des navigateurs.
+  Pédale : toute pédale Bluetooth en mode CLAVIER (flèches, page suivante / précédente, espace, entrée).
+  Par défaut : espace, entrée, page suivante, flèche bas, flèche droite = pause / reprendre le texte ;
+               page précédente, flèche haut, flèche gauche = reculer de deux lignes.
+  Les touches se règlent dans « Régler ma pédale ».
+-->
+<style>
+:root{
+  --fond:#000; --encre:#fff; --doux:#9a9aa3; --carte:#16161a; --bord:#2a2a31;
+  --accent:#7c4dd6; --repere:#e8b84b; --rouge:#e5322d; --taille:36px;
+  --haut-texte:calc(env(safe-area-inset-top) + 6vh);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--fond);color:var(--encre);
+  font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;-webkit-text-size-adjust:100%}
+body{overscroll-behavior:none}
+[hidden]{display:none!important}
+button{font:inherit;color:inherit;background:var(--carte);border:1px solid var(--bord);border-radius:12px;
+  padding:10px 14px;min-height:46px;cursor:pointer;touch-action:manipulation}
+button:disabled{opacity:.4}
+button.principal{background:var(--accent);border-color:var(--accent);font-weight:700;font-size:20px;width:100%;min-height:58px}
+select{font:inherit;color:inherit;background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:10px;min-height:46px}
+
+/* ÉCRAN DES TEXTES */
+#edition{max-width:640px;margin:0 auto;
+  padding:calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 24px)}
+h1{font-size:24px;margin:4px 0 12px}
+.ligne{display:flex;gap:8px;align-items:center;margin:10px 0}
+.ligne > select{flex:1;min-width:0}
+.ligne > button.large{flex:1}
+textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45;color:inherit;background:var(--carte);
+  border:1px solid var(--bord);border-radius:12px;padding:12px;resize:vertical}
+.reglage{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--bord)}
+.reglage .boutons{display:flex;gap:8px;align-items:center}
+.reglage .valeur{min-width:40px;text-align:center;font-weight:700}
+.reglage button{min-width:46px;font-size:22px;padding:4px 10px}
+.interrupteur{width:26px;height:26px;accent-color:var(--accent)}
+.note{color:var(--doux);font-size:14px;line-height:1.4;margin:8px 0}
+.note.alerte{color:#ffb4a8}
+#panneau-pedale{background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:14px;margin:10px 0}
+#touche-recue{font-size:22px;font-weight:700;margin:8px 0;min-height:30px}
+
+/* ÉCRAN DE LECTURE */
+#lecture{position:fixed;inset:0;background:var(--fond);overflow:hidden}
+#camera{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:0}
+#lecture.selfie #camera{transform:scaleX(-1)}
+#defile{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;z-index:1}
+#defile::-webkit-scrollbar{display:none}
+#contenu{padding:35vh 7vw 65vh;font-size:var(--taille);line-height:1.35;font-weight:600;white-space:pre-wrap;overflow-wrap:break-word}
+#lecture.miroir #contenu,#lecture.miroir #decompte{transform:scaleX(-1)}
+.repere{position:absolute;top:35vh;margin-top:-12px;width:0;height:0;pointer-events:none;z-index:2;
+  border-top:12px solid transparent;border-bottom:12px solid transparent}
+.repere.gauche{left:0;border-left:16px solid var(--repere)}
+.repere.droite{right:0;border-right:16px solid var(--repere)}
+#etat{position:absolute;top:calc(env(safe-area-inset-top) + 10px);left:50%;transform:translateX(-50%);z-index:3;
+  background:rgba(255,255,255,.18);padding:6px 16px;border-radius:999px;font-size:15px;font-weight:700;pointer-events:none}
+#decompte{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30vw;font-weight:800;
+  pointer-events:none;background:rgba(0,0,0,.55);z-index:4}
+#barre{position:absolute;left:0;right:0;bottom:0;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;z-index:3;
+  padding:28px 10px calc(env(safe-area-inset-bottom) + 12px);
+  background:linear-gradient(to top,rgba(0,0,0,.96),rgba(0,0,0,.8) 70%,rgba(0,0,0,0))}
+#barre .valeur{align-self:center;min-width:80px;text-align:center;font-size:15px;color:var(--doux)}
+
+/* MODE FILMER : le texte en haut, près de l'objectif */
+#lecture.camera #defile{bottom:auto;height:46%;background:rgba(0,0,0,.45)}
+#lecture.camera #contenu{padding:var(--haut-texte) 6vw 40vh}
+#lecture.camera .repere{top:var(--haut-texte)}
+#lecture.camera #barre{top:46%;bottom:auto;background:none;padding:10px}
+#lecture.camera #barre .valeur{color:#fff;text-shadow:0 1px 3px #000}
+#commandes-film{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 18px);z-index:3;
+  display:flex;align-items:center;justify-content:center;gap:26px}
+#chrono{min-width:84px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;
+  background:rgba(0,0,0,.55);padding:8px 12px;border-radius:999px}
+#chrono.en-cours{background:var(--rouge)}
+#rec{width:78px;height:78px;border-radius:50%;border:5px solid #fff;background:transparent;padding:0;min-height:0;
+  display:flex;align-items:center;justify-content:center}
+#rec::after{content:"";width:58px;height:58px;border-radius:50%;background:var(--rouge);transition:all .15s}
+#rec.en-cours::after{width:30px;height:30px;border-radius:7px}
+#retourner{min-width:84px;background:rgba(0,0,0,.55)}
+#message{position:absolute;left:16px;right:16px;top:50%;transform:translateY(-50%);z-index:6;
+  background:rgba(0,0,0,.9);border:1px solid var(--bord);border-radius:14px;padding:18px;font-size:17px;line-height:1.45;text-align:center}
+#revue{position:absolute;inset:0;z-index:7;background:#000;display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top) + 10px) 14px calc(env(safe-area-inset-bottom) + 14px)}
+#prise{flex:1;min-height:0;width:100%;object-fit:contain;background:#000;border-radius:12px}
+</style>
+</head>
+<body>
+
+<section id="edition">
+  <h1>Prompteur</h1>
+  <div class="ligne">
+    <select id="liste" aria-label="Mes textes"></select>
+    <button id="nouveau">Nouveau</button>
+    <button id="supprimer">Supprimer</button>
+  </div>
+  <textarea id="texte" placeholder="Colle ici ton texte, depuis Notes par exemple."></textarea>
+  <p class="note">Les textes restent dans ce téléphone. Garde l'original dans Notes : ici, c'est une copie.</p>
+
+  <div class="reglage"><span>Taille du texte</span><span class="boutons">
+    <button data-regle="taille" data-pas="-2" aria-label="Texte plus petit">−</button><span class="valeur" id="v-taille"></span>
+    <button data-regle="taille" data-pas="2" aria-label="Texte plus grand">+</button></span></div>
+  <div class="reglage"><span>Vitesse</span><span class="boutons">
+    <button data-regle="vitesse" data-pas="-1" aria-label="Moins vite">−</button><span class="valeur" id="v-vitesse"></span>
+    <button data-regle="vitesse" data-pas="1" aria-label="Plus vite">+</button></span></div>
+  <label class="reglage"><span>Compte à rebours de 3 secondes</span><input type="checkbox" id="avec-decompte" class="interrupteur"></label>
+  <label class="reglage"><span>Miroir (seulement pour une vitre de prompteur)</span><input type="checkbox" id="miroir" class="interrupteur"></label>
+
+  <div class="ligne"><button id="ouvrir-pedale" class="large">Régler ma pédale</button></div>
+  <div id="panneau-pedale" hidden>
+    <div>Appuie sur ta pédale.</div>
+    <div id="touche-recue">…</div>
+    <div class="ligne"><button id="assigner-pause" class="large" disabled>Cette touche : pause / reprendre</button></div>
+    <div class="ligne"><button id="assigner-reculer" class="large" disabled>Cette touche : reculer</button></div>
+    <p class="note" id="touches-actuelles"></p>
+    <p class="note">Si rien ne s'affiche quand tu appuies, ta pédale n'est pas connectée en Bluetooth, ou elle n'est pas en mode clavier (voir sa notice). Une pédale réglée sur le volume ne peut pas être lue par une page web.</p>
+    <div class="ligne"><button id="defaut-pedale" class="large">Touches par défaut</button><button id="fermer-pedale" class="large">Fermer</button></div>
+  </div>
+
+  <p class="note" id="info-veille" hidden>Ici, la page ne peut pas empêcher l'écran de se mettre en veille. Pendant le tournage, règle Réglages, Luminosité et affichage, Verrouillage automatique sur Jamais.</p>
+  <p class="note alerte" id="info-https" hidden>Pour filmer, la page doit être ouverte à une adresse sécurisée, qui commence par https. À cette adresse-ci, seule la lecture sans filmer marche.</p>
+  <div class="ligne"><button class="principal" id="filmer">Filmer avec le texte</button></div>
+  <div class="ligne"><button id="lire" class="large">Lire sans filmer</button></div>
+</section>
+
+<section id="lecture" hidden>
+  <video id="camera" playsinline muted autoplay hidden></video>
+  <div id="defile"><div id="contenu"></div></div>
+  <div class="repere gauche"></div><div class="repere droite"></div>
+  <div id="etat" hidden>Pause</div>
+  <div id="decompte" hidden></div>
+  <div id="barre" hidden>
+    <button id="retour">Textes</button>
+    <button id="debut">Début</button>
+    <button data-regle="vitesse" data-pas="-1">Vitesse −</button>
+    <span class="valeur" id="v-vitesse-l"></span>
+    <button data-regle="vitesse" data-pas="1">Vitesse +</button>
+    <button data-regle="taille" data-pas="-2">A−</button>
+    <button data-regle="taille" data-pas="2">A+</button>
+    <button id="reprendre">Reprendre</button>
+  </div>
+  <div id="commandes-film" hidden>
+    <span id="chrono">00:00</span>
+    <button id="rec" aria-label="Filmer ou arrêter"></button>
+    <button id="retourner">Caméra</button>
+  </div>
+  <div id="message" hidden></div>
+  <div id="revue" hidden>
+    <video id="prise" playsinline controls></video>
+    <div class="ligne"><button class="principal" id="sauver-video">Enregistrer dans Photos</button></div>
+    <div class="ligne"><button id="refaire" class="large">Effacer</button><button id="revue-textes" class="large">Textes</button></div>
+  </div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var CLE = 'prompteur.v1';
+  var DEFAUT_TOUCHES = {
+    pause: ['Space', ' ', 'Enter', 'NumpadEnter', 'PageDown', 'ArrowDown', 'ArrowRight', 'MediaPlayPause'],
+    reculer: ['PageUp', 'ArrowUp', 'ArrowLeft']
+  };
+  var BORNES = { taille: [20, 90], vitesse: [1, 15] };
+  var $ = function (id) { return document.getElementById(id); };
+  var nouvelId = function () { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); };
+  var copie = function (o) { return JSON.parse(JSON.stringify(o)); };
+
+  // ── mémoire du téléphone ─────────────────────────────────────────────
+  function etatInitial() {
+    var id = nouvelId();
+    return { textes: [{ id: id, texte: '' }], courant: id, taille: 36, vitesse: 3,
+             miroir: false, decompte: true, touches: copie(DEFAUT_TOUCHES) };
+  }
+  function charger() {
+    var base = etatInitial();
+    try {
+      var e = JSON.parse(localStorage.getItem(CLE));
+      if (e && Array.isArray(e.textes) && e.textes.length) {
+        var fusion = Object.assign(base, e);
+        if (!fusion.touches || !Array.isArray(fusion.touches.pause) || !Array.isArray(fusion.touches.reculer)) {
+          fusion.touches = copie(DEFAUT_TOUCHES);
+        }
+        return fusion;
+      }
+    } catch (_) { /* mémoire illisible : on repart propre */ }
+    return base;
+  }
+  var E = charger();
+  function sauver() { try { localStorage.setItem(CLE, JSON.stringify(E)); } catch (_) {} }
+
+  // ── les textes ──────────────────────────────────────────────────────
+  function texteCourant() {
+    for (var i = 0; i < E.textes.length; i++) if (E.textes[i].id === E.courant) return E.textes[i];
+    E.courant = E.textes[0].id; return E.textes[0];
+  }
+  function titre(t) {
+    var lignes = (t.texte || '').split('\n');
+    for (var i = 0; i < lignes.length; i++) {
+      var l = lignes[i].trim();
+      if (l) return l.length > 40 ? l.slice(0, 40) + '…' : l;
+    }
+    return 'Texte vide';
+  }
+  function majListe() {
+    var sel = $('liste'); sel.innerHTML = '';
+    E.textes.forEach(function (t) {
+      var o = document.createElement('option'); o.value = t.id; o.textContent = titre(t); sel.appendChild(o);
+    });
+    sel.value = texteCourant().id;
+  }
+  function afficherTexte() { $('texte').value = texteCourant().texte; }
+
+  $('liste').addEventListener('change', function (e) { E.courant = e.target.value; sauver(); afficherTexte(); });
+  var minuterie = null;
+  $('texte').addEventListener('input', function (e) {
+    texteCourant().texte = e.target.value;
+    clearTimeout(minuterie);
+    minuterie = setTimeout(function () { sauver(); majListe(); }, 400);
+  });
+  $('nouveau').addEventListener('click', function () {
+    var t = { id: nouvelId(), texte: '' };
+    E.textes.unshift(t); E.courant = t.id; sauver(); majListe(); afficherTexte(); $('texte').focus();
+  });
+  $('supprimer').addEventListener('click', function () {
+    var t = texteCourant();
+    if (t.texte.trim() && !window.confirm('Supprimer « ' + titre(t) + ' » de ce téléphone ?')) return;
+    E.textes = E.textes.filter(function (x) { return x.id !== t.id; });
+    if (!E.textes.length) E.textes = [{ id: nouvelId(), texte: '' }];
+    E.courant = E.textes[0].id; sauver(); majListe(); afficherTexte();
+  });
+
+  // ── réglages ────────────────────────────────────────────────────────
+  function majReglages() {
+    $('v-taille').textContent = E.taille;
+    $('v-vitesse').textContent = E.vitesse;
+    $('v-vitesse-l').textContent = 'Vitesse ' + E.vitesse;
+    $('miroir').checked = E.miroir;
+    $('avec-decompte').checked = E.decompte;
+    document.documentElement.style.setProperty('--taille', E.taille + 'px');
+    lecture.classList.toggle('miroir', E.miroir);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-regle]'), function (b) {
+    b.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      var r = b.dataset.regle, pas = Number(b.dataset.pas), mn = BORNES[r][0], mx = BORNES[r][1];
+      var avant = proportion();
+      E[r] = Math.min(mx, Math.max(mn, E[r] + pas)); sauver(); majReglages();
+      if (r === 'taille' && enLecture) retrouverProportion(avant);
+    });
+  });
+  $('miroir').addEventListener('change', function (e) { E.miroir = e.target.checked; sauver(); majReglages(); });
+  $('avec-decompte').addEventListener('change', function (e) { E.decompte = e.target.checked; sauver(); });
+
+  // ── défilement du texte ─────────────────────────────────────────────
+  var lecture = $('lecture'), defile = $('defile'), contenu = $('contenu'), video = $('camera');
+  var enLecture = false, enPause = true, position = 0, dernier = null, compteur = null;
+  var finAtteinte = false, arretParToucher = false;
+  // film
+  var modeCamera = false, faceAvant = true, flux = null, enregistreur = null, morceaux = [];
+  var debutRec = 0, minuterieRec = null, prise = null, priseSauvee = true, enRevue = false;
+
+  function enregistre() { return !!(enregistreur && enregistreur.state === 'recording'); }
+  function pxParSeconde() { return E.vitesse * 10 * (E.taille / 36); }
+  function hauteurLigne() { return E.taille * 1.35; }
+  function maxPos() { return Math.max(0, defile.scrollHeight - defile.clientHeight); }
+  function proportion() { var m = maxPos(); return m ? position / m : 0; }
+  function retrouverProportion(p) {
+    requestAnimationFrame(function () { position = p * maxPos(); defile.scrollTop = position; });
+  }
+  function poserEtat() {
+    var decompteEnCours = compteur !== null, rec = enregistre();
+    var montrerEtat = enLecture && enPause && !decompteEnCours && !enRevue && (!modeCamera || rec || finAtteinte);
+    $('etat').hidden = !montrerEtat;
+    $('etat').textContent = finAtteinte ? 'Fin du texte' : (modeCamera ? 'Texte en pause' : 'Pause');
+    $('barre').hidden = !enPause || decompteEnCours || enRevue;
+    $('reprendre').hidden = finAtteinte;
+    $('retour').hidden = rec;
+    $('debut').hidden = rec;
+    $('retourner').hidden = rec || decompteEnCours;
+    $('chrono').classList.toggle('en-cours', rec);
+    $('rec').classList.toggle('en-cours', rec);
+  }
+  function boucle(t) {
+    if (!enLecture) return;
+    if (!enPause && compteur === null) {
+      if (dernier !== null) {
+        position += pxParSeconde() * Math.min(0.1, (t - dernier) / 1000);
+        var m = maxPos();
+        if (position >= m) { position = m; finAtteinte = true; enPause = true; poserEtat(); }
+        defile.scrollTop = position;
+      }
+      dernier = t;
+    } else {
+      dernier = null;
+    }
+    requestAnimationFrame(boucle);
+  }
+  function basculer() {
+    if (!enLecture || enRevue) return;
+    if (compteur !== null) { arreterDecompte(); enPause = true; poserEtat(); return; }
+    if (enPause) { if (finAtteinte) return; enPause = false; } else { enPause = true; }
+    poserEtat();
+  }
+  function reculer() {
+    if (!enLecture || enRevue) return;
+    position = Math.max(0, position - 2 * hauteurLigne());
+    defile.scrollTop = position; finAtteinte = false; poserEtat();
+  }
+  function allerAuDebut() { position = 0; defile.scrollTop = 0; finAtteinte = false; poserEtat(); }
+  function lancerDecompte(n, ensuite) {
+    var reste = n, el = $('decompte');
+    el.hidden = false; el.textContent = reste; enPause = false;
+    compteur = setInterval(function () {
+      reste--;
+      if (reste <= 0) { arreterDecompte(); if (ensuite) ensuite(); poserEtat(); } else { el.textContent = reste; }
+    }, 1000);
+    poserEtat();
+  }
+  function arreterDecompte() { if (compteur !== null) clearInterval(compteur); compteur = null; $('decompte').hidden = true; }
+
+  function ouvrir(avecCamera) {
+    var t = texteCourant().texte.trim();
+    if (!t) { $('texte').focus(); return; }
+    sauver();
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    contenu.textContent = t;
+    $('panneau-pedale').hidden = true;
+    modeCamera = !!avecCamera;
+    lecture.classList.toggle('camera', modeCamera);
+    video.hidden = !modeCamera; $('commandes-film').hidden = !modeCamera;
+    $('chrono').textContent = '00:00'; cacherMessage();
+    $('edition').hidden = true; lecture.hidden = false;
+    enLecture = true; finAtteinte = false; position = 0; defile.scrollTop = 0; dernier = null;
+    garderEcranAllume();
+    if (modeCamera) { enPause = true; allumerCamera(); }
+    else if (E.decompte) lancerDecompte(3);
+    else enPause = false;
+    poserEtat();
+    requestAnimationFrame(boucle);
+  }
+  function quitter() {
+    if (enregistre()) return;              // on ne quitte pas en plein enregistrement
+    enLecture = false; arreterDecompte(); enPause = true; relacherEcran(); arreterCamera();
+    modeCamera = false; lecture.classList.remove('camera', 'selfie');
+    lecture.hidden = true; $('edition').hidden = false; poserEtat();
+  }
+  $('filmer').addEventListener('click', function () { ouvrir(true); });
+  $('lire').addEventListener('click', function () { ouvrir(false); });
+  $('retour').addEventListener('click', function (e) { e.stopPropagation(); quitter(); });
+  $('debut').addEventListener('click', function (e) { e.stopPropagation(); allerAuDebut(); });
+  $('reprendre').addEventListener('click', function (e) { e.stopPropagation(); basculer(); });
+
+  // toucher le texte : un tap met en pause ou relance ; glisser pour retrouver sa place
+  defile.addEventListener('pointerdown', function () {
+    if (enLecture && !enPause && compteur === null) { enPause = true; arretParToucher = true; poserEtat(); }
+    else arretParToucher = false;
+  });
+  defile.addEventListener('click', function () {
+    if (arretParToucher) { arretParToucher = false; return; }
+    basculer();
+  });
+  defile.addEventListener('scroll', function () {
+    if (enLecture && enPause) {
+      position = defile.scrollTop;
+      if (position < maxPos() - 1) finAtteinte = false;
+      poserEtat();
+    }
+  }, { passive: true });
+  // un bouton touché ne garde pas la main : sinon la pédale « Entrée » le réappuierait
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('#lecture button');
+    if (b) setTimeout(function () { b.blur(); }, 0);
+  }, true);
+
+  // ── la caméra et l'enregistrement ───────────────────────────────────
+  function montrerMessage(t) { $('message').textContent = t; $('message').hidden = false; }
+  function cacherMessage() { $('message').hidden = true; }
+  function arreterCamera() {
+    if (flux) flux.getTracks().forEach(function (t) { t.stop(); });
+    flux = null; video.srcObject = null;
+  }
+  function allumerCamera() {
+    cacherMessage();
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      montrerMessage('Pour filmer, la page doit être ouverte à une adresse sécurisée, qui commence par https. Ici, seule la lecture sans filmer marche.');
+      return Promise.resolve(false);
+    }
+    arreterCamera();
+    return navigator.mediaDevices.getUserMedia({
+      video: { facingMode: faceAvant ? 'user' : 'environment', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+      audio: { echoCancellation: false, noiseSuppression: false }
+    }).then(function (f) {
+      flux = f; video.srcObject = f; lecture.classList.toggle('selfie', faceAvant);
+      var p = video.play(); if (p && p.catch) p.catch(function () {});
+      return true;
+    }).catch(function (e) {
+      var n = e && e.name;
+      montrerMessage(n === 'NotAllowedError'
+        ? 'La caméra ou le micro est refusé. Autorise-les (Réglages, Safari, Caméra et Micro), puis recharge la page.'
+        : n === 'NotFoundError' ? 'Aucune caméra trouvée sur cet appareil.'
+        : 'La caméra n\'a pas pu s\'allumer. Une autre app l\'utilise peut-être : ferme-la et réessaie.');
+      return false;
+    });
+  }
+  function typeVideo() {
+    var types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+    for (var i = 0; i < types.length; i++) if (MediaRecorder.isTypeSupported(types[i])) return types[i];
+    return '';
+  }
+  function majChrono() {
+    var s = Math.floor((Date.now() - debutRec) / 1000);
+    $('chrono').textContent = ('0' + Math.floor(s / 60)).slice(-2) + ':' + ('0' + s % 60).slice(-2);
+  }
+  function demarrerEnregistrement() {
+    if (!flux) return;
+    var type = typeVideo(), opts = { videoBitsPerSecond: 8000000 };
+    if (type) opts.mimeType = type;
+    try { enregistreur = new MediaRecorder(flux, opts); }
+    catch (_) {
+      try { enregistreur = new MediaRecorder(flux); }
+      catch (__) { enregistreur = null; enPause = true; montrerMessage('Ce navigateur ne sait pas enregistrer la vidéo.'); poserEtat(); return; }
+    }
+    morceaux = [];
+    enregistreur.ondataavailable = function (ev) { if (ev.data && ev.data.size) morceaux.push(ev.data); };
+    enregistreur.onstop = finEnregistrement;
+    enregistreur.start(1000);
+    debutRec = Date.now(); majChrono(); clearInterval(minuterieRec); minuterieRec = setInterval(majChrono, 250);
+    enPause = false; poserEtat();
+  }
+  function arreterEnregistrement() {
+    clearInterval(minuterieRec);
+    if (enregistreur && enregistreur.state !== 'inactive') enregistreur.stop();
+    enPause = true; poserEtat();
+  }
+  function horodatage() {
+    var d = new Date(), p = function (n) { return ('0' + n).slice(-2); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + '-' + p(d.getHours()) + 'h' + p(d.getMinutes()) + '-' + p(d.getSeconds());
+  }
+  function finEnregistrement() {
+    clearInterval(minuterieRec);
+    var type = (enregistreur && enregistreur.mimeType) || (morceaux[0] && morceaux[0].type) || 'video/mp4';
+    var blob = new Blob(morceaux, { type: type });
+    morceaux = []; enregistreur = null;
+    if (!blob.size) { montrerMessage('La prise est vide : rien n\'a été enregistré.'); poserEtat(); return; }
+    prise = new File([blob], 'prompteur-' + horodatage() + '.' + (/mp4/.test(type) ? 'mp4' : 'webm'), { type: type.split(';')[0] });
+    priseSauvee = false;
+    var v = $('prise'); if (v.src) URL.revokeObjectURL(v.src); v.src = URL.createObjectURL(prise);
+    $('revue').dataset.octets = String(prise.size);
+    $('sauver-video').textContent = 'Enregistrer dans Photos';
+    enRevue = true; $('revue').hidden = false; poserEtat();
+  }
+  $('rec').addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (enregistre()) { arreterEnregistrement(); return; }
+    if (compteur !== null) { arreterDecompte(); enPause = true; poserEtat(); return; }   // annule le compte à rebours
+    if (!flux) { allumerCamera(); return; }
+    if (finAtteinte) allerAuDebut();
+    cacherMessage();
+    if (E.decompte) lancerDecompte(3, demarrerEnregistrement); else demarrerEnregistrement();
+  });
+  $('retourner').addEventListener('click', function (e) { e.stopPropagation(); faceAvant = !faceAvant; allumerCamera(); });
+
+  function marquerSauvee() { priseSauvee = true; $('sauver-video').textContent = 'Enregistrée ✓ (encore une fois ?)'; }
+  function telecharger() {
+    var a = document.createElement('a'); a.href = URL.createObjectURL(prise); a.download = prise.name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    marquerSauvee();
+  }
+  $('sauver-video').addEventListener('click', function () {
+    if (!prise) return;
+    // sur iPhone : la feuille de partage, puis « Enregistrer la vidéo » range la prise dans Photos
+    if (navigator.canShare && navigator.share && navigator.canShare({ files: [prise] })) {
+      navigator.share({ files: [prise] }).then(marquerSauvee).catch(function (err) {
+        if (!err || err.name !== 'AbortError') telecharger();
+      });
+      return;
+    }
+    telecharger();
+  });
+  function quitterRevue() {
+    if (!priseSauvee && !window.confirm('Effacer cette prise ? Elle n\'est pas enregistrée dans Photos.')) return false;
+    enRevue = false; $('revue').hidden = true;
+    var v = $('prise'); v.pause();
+    if (v.src) { URL.revokeObjectURL(v.src); v.removeAttribute('src'); v.load(); }
+    prise = null; priseSauvee = true; $('chrono').textContent = '00:00';
+    return true;
+  }
+  $('refaire').addEventListener('click', function () { if (quitterRevue()) { enPause = true; allerAuDebut(); } });
+  $('revue-textes').addEventListener('click', function () { if (quitterRevue()) quitter(); });
+
+  // ── la pédale (vue par la page comme un clavier) ────────────────────
+  function idTouche(e) { return (e.code && e.code !== 'Unidentified') ? e.code : e.key; }
+  function actionDe(e) {
+    var id = idTouche(e), acts = ['pause', 'reculer'];
+    for (var i = 0; i < acts.length; i++) {
+      var l = E.touches[acts[i]];
+      if (l.indexOf(id) >= 0 || l.indexOf(e.key) >= 0) return acts[i];
+    }
+    return null;
+  }
+  var NOMS = { Space: 'Espace', ' ': 'Espace', Enter: 'Entrée', NumpadEnter: 'Entrée', PageDown: 'Page suivante',
+               PageUp: 'Page précédente', ArrowDown: 'Flèche bas', ArrowUp: 'Flèche haut', ArrowLeft: 'Flèche gauche',
+               ArrowRight: 'Flèche droite', MediaPlayPause: 'Lecture / pause' };
+  function nomTouche(id) {
+    if (NOMS[id]) return NOMS[id];
+    var m = /^(?:Key|Digit)(.)$/.exec(id);
+    return m ? m[1] : id;
+  }
+  function noms(liste) {
+    var vus = [];
+    liste.forEach(function (k) { var n = nomTouche(k); if (vus.indexOf(n) < 0) vus.push(n); });
+    return vus.join(', ');
+  }
+  function majTouches() {
+    $('touches-actuelles').textContent = 'Pause / reprendre : ' + noms(E.touches.pause) +
+      '. Reculer : ' + noms(E.touches.reculer) + '.';
+  }
+  var derniereTouche = null;
+  function apprendre(e) {
+    e.preventDefault();
+    if (e.repeat) return;
+    derniereTouche = idTouche(e);
+    var a = actionDe(e);
+    $('touche-recue').textContent = nomTouche(derniereTouche) +
+      (a ? ' (fait déjà : ' + (a === 'pause' ? 'pause / reprendre' : 'reculer') + ')' : ' (aucune action pour l\'instant)');
+    $('assigner-pause').disabled = false; $('assigner-reculer').disabled = false;
+  }
+  function assigner(a) {
+    if (!derniereTouche) return;
+    ['pause', 'reculer'].forEach(function (k) {
+      E.touches[k] = E.touches[k].filter(function (x) { return x !== derniereTouche; });
+    });
+    E.touches[a].unshift(derniereTouche); sauver(); majTouches();
+    $('touche-recue').textContent = nomTouche(derniereTouche) + ' : ' + (a === 'pause' ? 'pause / reprendre' : 'reculer') + ' ✓';
+  }
+  $('ouvrir-pedale').addEventListener('click', function () {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    $('panneau-pedale').hidden = false; $('touche-recue').textContent = '…'; derniereTouche = null;
+    $('assigner-pause').disabled = true; $('assigner-reculer').disabled = true;
+    $('panneau-pedale').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  $('fermer-pedale').addEventListener('click', function () { $('panneau-pedale').hidden = true; });
+  $('assigner-pause').addEventListener('click', function () { assigner('pause'); });
+  $('assigner-reculer').addEventListener('click', function () { assigner('reculer'); });
+  $('defaut-pedale').addEventListener('click', function () {
+    E.touches = copie(DEFAUT_TOUCHES); sauver(); majTouches(); $('touche-recue').textContent = 'Touches par défaut remises.';
+  });
+
+  // les touches tapées DANS le texte ne sont jamais prises pour la pédale (sinon « effacer » ne marche plus)
+  function dansUnChamp(e) {
+    var t = e.target;
+    return !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable);
+  }
+  $('texte').addEventListener('focus', function () { $('panneau-pedale').hidden = true; });
+
+  window.addEventListener('keydown', function (e) {
+    if (!enLecture && !$('panneau-pedale').hidden && !dansUnChamp(e)) { apprendre(e); return; }
+    if (!enLecture || enRevue) return;
+    if (e.key === 'Escape') { e.preventDefault(); quitter(); return; }
+    var a = actionDe(e);
+    if (!a) return;
+    e.preventDefault();
+    if (e.repeat) return;           // pédale gardée enfoncée : un seul effet
+    if (a === 'pause') basculer(); else reculer();
+  }, true);
+  window.addEventListener('keyup', function (e) { if (enLecture && !enRevue && actionDe(e)) e.preventDefault(); }, true);
+
+  // ── l'écran reste allumé quand le téléphone le permet ───────────────
+  var verrou = null;
+  function garderEcranAllume() {
+    if (!('wakeLock' in navigator)) return;
+    navigator.wakeLock.request('screen').then(function (v) { verrou = v; }).catch(function () { verrou = null; });
+  }
+  function relacherEcran() { try { if (verrou) verrou.release(); } catch (_) {} verrou = null; }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden' && enregistre()) arreterEnregistrement();   // appel, app quittée : on garde ce qui est filmé
+    if (document.visibilityState === 'visible' && enLecture) garderEcranAllume();
+  });
+  $('info-veille').hidden = ('wakeLock' in navigator);
+  $('info-https').hidden = window.isSecureContext;
+
+  window.addEventListener('pagehide', sauver);
+  majListe(); afficherTexte(); majReglages(); majTouches();
+})();
+</script>
+</body>
+</html>
