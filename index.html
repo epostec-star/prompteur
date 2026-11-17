@@ -66,6 +66,9 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 #lecture{position:fixed;inset:0;background:var(--fond);overflow:hidden}
 #camera{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:0}
 #lecture.selfie #camera{transform:scaleX(-1)}
+#toile{position:absolute;left:50%;top:50%;height:100%;min-width:100%;aspect-ratio:9/16;transform:translate(-50%,-50%);z-index:0;background:#000}
+#lecture.selfie #toile{transform:translate(-50%,-50%) scaleX(-1)}
+#lecture:not(.camera) .seulement-camera{display:none!important}
 #defile{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;z-index:1}
 #defile::-webkit-scrollbar{display:none}
 #contenu{padding:35vh 7vw 65vh;font-size:var(--taille);line-height:1.35;font-weight:600;white-space:pre-wrap;overflow-wrap:break-word}
@@ -84,13 +87,14 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 #barre .valeur{align-self:center;min-width:80px;text-align:center;font-size:15px;color:var(--doux)}
 
 /* MODE FILMER : le texte en haut, près de l'objectif */
-#lecture.camera #defile{background:rgba(0,0,0,.5);-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 170px),transparent calc(100% - 115px));mask-image:linear-gradient(to bottom,#000 calc(100% - 170px),transparent calc(100% - 115px))}
-#lecture.camera #contenu{padding:var(--haut-texte) 6vw 90vh;text-shadow:0 2px 6px rgba(0,0,0,.85)}
+#lecture.camera #defile{background:rgba(0,0,0,.22);-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 170px),transparent calc(100% - 115px));mask-image:linear-gradient(to bottom,#000 calc(100% - 170px),transparent calc(100% - 115px))}
+#lecture.camera #contenu{padding:var(--haut-texte) 6vw 90vh;text-shadow:0 0 3px #000,0 0 3px #000,0 2px 8px #000}
 #lecture.camera .repere{top:var(--haut-texte)}
 #lecture.camera #barre{bottom:calc(env(safe-area-inset-bottom) + 112px);background:none;padding:10px}
 #retour{position:absolute;top:calc(env(safe-area-inset-top) + 8px);left:10px;z-index:5;background:rgba(0,0,0,.6);min-height:38px;padding:6px 14px;font-size:15px}
 #infos-camera{position:absolute;top:calc(env(safe-area-inset-top) + 16px);right:12px;z-index:5;font-size:12px;color:#ddd;text-shadow:0 1px 3px #000;pointer-events:none}
 #lecture.camera #barre .valeur{color:#fff;text-shadow:0 1px 3px #000}
+#lecture.camera #barre{gap:6px}#lecture.camera #barre button{min-height:40px;padding:6px 10px;font-size:15px}#lecture.camera #barre .valeur{min-width:0;font-size:13px}
 #commandes-film{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 18px);z-index:3;
   display:flex;align-items:center;justify-content:center;gap:26px}
 #chrono{min-width:84px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;
@@ -154,11 +158,12 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   <p class="note alerte" id="info-https" hidden>Pour filmer, la page doit être ouverte à une adresse sécurisée, qui commence par https. À cette adresse-ci, seule la lecture sans filmer marche.</p>
   <div class="ligne"><button class="principal" id="filmer">Filmer avec le texte</button></div>
   <div class="ligne"><button id="lire" class="large">Lire sans filmer</button></div>
-  <p class="note" id="version">Version du 17/11 à 18h26</p>
+  <p class="note" id="version">Version du 17/11 à 18h38</p>
 </section>
 
 <section id="lecture" hidden>
   <video id="camera" playsinline muted autoplay hidden></video>
+  <canvas id="toile" width="1080" height="1920" hidden></canvas>
   <div id="defile"><div id="contenu"></div></div>
   <button id="retour">‹ Textes</button>
   <div id="infos-camera" hidden></div>
@@ -173,6 +178,9 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     <button data-regle="vitesse" data-pas="1">Vitesse +</button>
     <button data-regle="taille" data-pas="-2">A−</button>
     <button data-regle="taille" data-pas="2">A+</button>
+    <button data-regle="zoom" data-pas="-0.1" class="seulement-camera">Zoom −</button>
+    <span class="valeur seulement-camera" id="v-zoom"></span>
+    <button data-regle="zoom" data-pas="0.1" class="seulement-camera">Zoom +</button>
     <button id="reprendre">Reprendre</button>
   </div>
   <div id="commandes-film" hidden>
@@ -196,7 +204,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     pause: ['Space', ' ', 'Enter', 'NumpadEnter', 'PageDown', 'ArrowDown', 'ArrowRight', 'MediaPlayPause'],
     reculer: ['PageUp', 'ArrowUp', 'ArrowLeft']
   };
-  var BORNES = { taille: [20, 90], vitesse: [1, 15] };
+  var BORNES = { taille: [20, 90], vitesse: [1, 15], zoom: [1, 2.5] };
   var $ = function (id) { return document.getElementById(id); };
   var nouvelId = function () { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); };
   var copie = function (o) { return JSON.parse(JSON.stringify(o)); };
@@ -205,7 +213,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   function etatInitial() {
     var id = nouvelId();
     return { textes: [{ id: id, texte: '' }], courant: id, taille: 36, vitesse: 3,
-             miroir: false, decompte: true, touches: copie(DEFAUT_TOUCHES) };
+             miroir: false, decompte: true, zoom: 1, touches: copie(DEFAUT_TOUCHES) };
   }
   function charger() {
     var base = etatInitial();
@@ -270,6 +278,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     $('v-taille').textContent = E.taille;
     $('v-vitesse').textContent = E.vitesse;
     $('v-vitesse-l').textContent = 'Vitesse ' + E.vitesse;
+    $('v-zoom').textContent = 'Zoom ' + E.zoom.toFixed(1).replace('.', ',') + '×';
     $('miroir').checked = E.miroir;
     $('avec-decompte').checked = E.decompte;
     document.documentElement.style.setProperty('--taille', E.taille + 'px');
@@ -280,7 +289,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
       ev.stopPropagation();
       var r = b.dataset.regle, pas = Number(b.dataset.pas), mn = BORNES[r][0], mx = BORNES[r][1];
       var avant = proportion();
-      E[r] = Math.min(mx, Math.max(mn, E[r] + pas)); sauver(); majReglages();
+      E[r] = Math.round(Math.min(mx, Math.max(mn, E[r] + pas)) * 10) / 10; sauver(); majReglages();
       if (r === 'taille' && enLecture) retrouverProportion(avant);
     });
   });
@@ -289,10 +298,12 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 
   // ── défilement du texte ─────────────────────────────────────────────
   var lecture = $('lecture'), defile = $('defile'), contenu = $('contenu'), video = $('camera');
+  var toile = $('toile'), pinceau = toile.getContext('2d');
   var enLecture = false, enPause = true, position = 0, dernier = null, compteur = null;
   var finAtteinte = false, arretParToucher = false;
   // film
   var modeCamera = false, faceAvant = true, flux = null, enregistreur = null, morceaux = [];
+  var fluxRec = null, dessinEnCours = false;
   var debutRec = 0, minuterieRec = null, prise = null, priseSauvee = true, enRevue = false;
 
   function enregistre() { return !!(enregistreur && enregistreur.state === 'recording'); }
@@ -364,7 +375,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     $('panneau-pedale').hidden = true;
     modeCamera = !!avecCamera;
     lecture.classList.toggle('camera', modeCamera);
-    video.hidden = !modeCamera; $('commandes-film').hidden = !modeCamera;
+    video.hidden = !modeCamera; toile.hidden = !modeCamera; $('commandes-film').hidden = !modeCamera;
     $('chrono').textContent = '00:00'; cacherMessage();
     $('edition').hidden = true; lecture.hidden = false;
     enLecture = true; finAtteinte = false; position = 0; defile.scrollTop = 0; dernier = null;
@@ -415,7 +426,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   function cacherMessage() { $('message').hidden = true; }
   function arreterCamera() {
     if (flux) flux.getTracks().forEach(function (t) { t.stop(); });
-    flux = null; video.srcObject = null;
+    flux = null; video.srcObject = null; pinceau.clearRect(0, 0, toile.width, toile.height);
   }
   // 4:3 = tout le champ du capteur, sans recadrage (les formats 16:9 de la caméra avant sont recadrés)
   function contraintesVideo(enHauteur) {
@@ -428,6 +439,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     }).then(function (f) {
       flux = f; video.srcObject = f; lecture.classList.toggle('selfie', faceAvant);
       var p = video.play(); if (p && p.catch) p.catch(function () {});
+      lancerDessin();
       return true;
     });
   }
@@ -454,7 +466,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
       }
       return d;
     }).then(function (d) {
-      if (d[0] && d[1]) $('infos-camera').textContent = 'Image filmée : ' + d[0] + ' × ' + d[1] + (d[1] >= d[0] ? ', verticale' : ', horizontale');
+      if (d[0] && d[1]) $('infos-camera').textContent = toile.captureStream ? 'Vidéo : 1080 × 1920, format reel' : 'Image filmée : ' + d[0] + ' × ' + d[1];
       poserEtat();
       return true;
     }).catch(function (e) {
@@ -465,6 +477,27 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
         : 'La caméra n\'a pas pu s\'allumer. Une autre app l\'utilise peut-être : ferme-la et réessaie.');
       return false;
     });
+  }
+  // le cadre du reel : du 9:16 découpé au centre de l'image de la caméra, resserré selon le zoom
+  function cadrage(sw, sh) {
+    var cible = 9 / 16, cw, ch;
+    if (sw / sh > cible) { ch = sh; cw = sh * cible; } else { cw = sw; ch = sw / cible; }
+    var z = E.zoom || 1; cw /= z; ch /= z;
+    return { x: (sw - cw) / 2, y: (sh - ch) / 2, w: cw, h: ch };
+  }
+  function dessiner() {
+    if (!flux) { dessinEnCours = false; return; }
+    var sw = video.videoWidth, sh = video.videoHeight;
+    if (sw && sh) { var c = cadrage(sw, sh); pinceau.drawImage(video, c.x, c.y, c.w, c.h, 0, 0, toile.width, toile.height); }
+    requestAnimationFrame(dessiner);
+  }
+  function lancerDessin() { if (!dessinEnCours) { dessinEnCours = true; requestAnimationFrame(dessiner); } }
+  // on filme la toile (ce que tu vois) avec le son du micro ; sans toile possible, l'image brute de la caméra
+  function fluxAEnregistrer() {
+    if (!toile.captureStream) return flux;
+    var s = toile.captureStream(30);
+    flux.getAudioTracks().forEach(function (t) { s.addTrack(t); });
+    return s;
   }
   function typeVideo() {
     var types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
@@ -480,9 +513,10 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     if (!flux) return;
     var type = typeVideo(), opts = { videoBitsPerSecond: 8000000 };
     if (type) opts.mimeType = type;
-    try { enregistreur = new MediaRecorder(flux, opts); }
+    fluxRec = fluxAEnregistrer();
+    try { enregistreur = new MediaRecorder(fluxRec, opts); }
     catch (_) {
-      try { enregistreur = new MediaRecorder(flux); }
+      try { enregistreur = new MediaRecorder(fluxRec); }
       catch (__) { enregistreur = null; enPause = true; montrerMessage('Ce navigateur ne sait pas enregistrer la vidéo.'); poserEtat(); return; }
     }
     morceaux = [];
@@ -503,6 +537,8 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   }
   function finEnregistrement() {
     clearInterval(minuterieRec);
+    if (fluxRec && fluxRec !== flux) fluxRec.getVideoTracks().forEach(function (t) { t.stop(); });
+    fluxRec = null;
     var type = (enregistreur && enregistreur.mimeType) || (morceaux[0] && morceaux[0].type) || 'video/mp4';
     var blob = new Blob(morceaux, { type: type });
     morceaux = []; enregistreur = null;
