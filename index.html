@@ -136,10 +136,13 @@ button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
     </ol>
     <button id="masquer-installer">J'ai compris</button>
   </div>
-  <div class="ligne"><button id="importer" class="large importer">📋 Coller depuis Notes</button></div>
+  <div class="ligne"><button id="charger" class="large importer">📂 Charger mes scripts</button></div>
+  <input type="file" id="fichier-scripts" accept=".txt,text/plain" hidden>
+  <p class="note">Ouvre le fichier « Mes scripts.txt », dans iCloud Drive, dossier Prompteur. Polly le met à jour quand tes scripts changent.</p>
   <p class="note" id="info-import" hidden></p>
+  <div class="ligne"><button id="importer" class="large">Coller un texte à la main</button></div>
   <div id="boite-import" hidden>
-    <p class="note">Si l'iPhone affiche une petite bulle « Coller », touche-la. Sinon, appuie longuement dans le cadre ci-dessous, puis Coller : l'import se fait tout seul.</p>
+    <p class="note">Copie d'abord ton texte (dans Notes : Tout sélectionner, Copier). Puis appuie longuement dans le cadre ci-dessous, et Coller : l'import se fait tout seul.</p>
     <textarea id="zone-import" placeholder="Appuie longuement ici, puis Coller"></textarea>
     <div class="ligne"><button id="valider-import" class="large">Importer ce qui est collé</button><button id="fermer-import" class="large">Fermer</button></div>
   </div>
@@ -175,7 +178,7 @@ button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
   <p class="note alerte" id="info-https" hidden>Pour filmer, la page doit être ouverte à une adresse sécurisée, qui commence par https. À cette adresse-ci, seule la lecture sans filmer marche.</p>
   <div class="ligne"><button class="principal" id="filmer">Filmer avec le texte</button></div>
   <div class="ligne"><button id="lire" class="large">Lire sans filmer</button></div>
-  <p class="note" id="version">Version du 18/11 à 10h03</p>
+  <p class="note" id="version">Version du 18/11 à 10h47</p>
 </section>
 
 <section id="lecture" hidden>
@@ -342,16 +345,29 @@ button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
   // on ouvre TOUJOURS le cadre de collage : la bulle « Coller » de l'iPhone se rate, et alors rien ne se passait
   function ouvrirBoite() { $('zone-import').value = ''; $('boite-import').hidden = false; }
   function fermerBoite() { $('boite-import').hidden = true; $('zone-import').value = ''; }
-  $('importer').addEventListener('click', function () {
-    $('info-import').hidden = true;
-    ouvrirBoite();
-    if (navigator.clipboard && navigator.clipboard.readText) {
-      navigator.clipboard.readText().then(function (t) {
-        if (!t || !t.trim()) { direImport('Rien à coller pour l\'instant : copie d\'abord une note dans Notes, ou colle-la dans le cadre ci-dessous.'); return; }
-        if (importer(t)) fermerBoite();
-      }).catch(function () { /* le cadre est déjà ouvert : on colle à la main */ });
-    }
+  // 📂 tes scripts arrivent par un FICHIER (iCloud Drive), jamais par le presse-papiers :
+  // le presse-papiers contenait n'importe quoi (une phrase sur Time Machine), et la page l'ajoutait comme un texte
+  $('charger').addEventListener('click', function () {
+    $('info-import').hidden = true; $('fichier-scripts').value = ''; $('fichier-scripts').click();
   });
+  $('fichier-scripts').addEventListener('change', function (e) {
+    var fichier = e.target.files && e.target.files[0];
+    if (!fichier) return;
+    var lecteur = new FileReader();
+    lecteur.onload = function () {
+      var contenu = String(lecteur.result || '');
+      var r = lireImport(contenu);
+      if (!r.scripts || !r.scripts.length) {
+        direImport('Ce fichier ne contient pas tes scripts. Choisis « Mes scripts.txt », dans iCloud Drive, dossier Prompteur.');
+        return;
+      }
+      importer(contenu);
+    };
+    lecteur.onerror = function () { direImport('Le fichier n\'a pas pu être lu. Réessaie, ou demande à Polly de le refaire.'); };
+    lecteur.readAsText(fichier, 'utf-8');
+  });
+  // coller à la main : seulement ce que tu colles toi-même dans le cadre
+  $('importer').addEventListener('click', function () { $('info-import').hidden = true; ouvrirBoite(); });
   $('zone-import').addEventListener('paste', function () {
     setTimeout(function () { if (importer($('zone-import').value)) fermerBoite(); }, 60);
   });
