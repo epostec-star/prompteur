@@ -64,6 +64,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 .texte-ligne.actif{border-color:var(--accent);background:#241b3a;font-weight:700}
 .titre-section{font-weight:700;margin:12px 0 0}
 #zone-import{min-height:96px}
+.champ{flex:1;min-width:0;font:inherit;font-size:17px;color:inherit;background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:10px 12px;min-height:46px}
 button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
 #panneau-pedale{background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:14px;margin:10px 0}
 #touche-recue{font-size:22px;font-weight:700;margin:8px 0;min-height:30px}
@@ -137,8 +138,10 @@ button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
     <button id="masquer-installer">J'ai compris</button>
   </div>
   <div class="ligne"><button id="charger" class="large importer">📂 Charger mes scripts</button></div>
-  <input type="file" id="fichier-scripts" accept=".txt,text/plain" hidden>
-  <p class="note">Ouvre le fichier « Mes scripts.txt », dans iCloud Drive, dossier Prompteur. Polly le met à jour quand tes scripts changent.</p>
+  <div id="boite-code" hidden>
+    <p class="note">Tape le code de tes scripts, une seule fois : il est dans ta note « Prompteur à pédale · mode d'emploi ». Avec des tirets ou des espaces, comme tu veux.</p>
+    <div class="ligne"><input id="code-scripts" class="champ" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="le code de ta note"><button id="valider-code">Valider</button></div>
+  </div>
   <p class="note" id="info-import" hidden></p>
   <div class="ligne"><button id="importer" class="large">Coller un texte à la main</button></div>
   <div id="boite-import" hidden>
@@ -178,7 +181,7 @@ button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
   <p class="note alerte" id="info-https" hidden>Pour filmer, la page doit être ouverte à une adresse sécurisée, qui commence par https. À cette adresse-ci, seule la lecture sans filmer marche.</p>
   <div class="ligne"><button class="principal" id="filmer">Filmer avec le texte</button></div>
   <div class="ligne"><button id="lire" class="large">Lire sans filmer</button></div>
-  <p class="note" id="version">Version du 18/11 à 10h47</p>
+  <p class="note" id="version">Version du 18/11 à 15h13</p>
 </section>
 
 <section id="lecture" hidden>
@@ -345,26 +348,60 @@ button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
   // on ouvre TOUJOURS le cadre de collage : la bulle « Coller » de l'iPhone se rate, et alors rien ne se passait
   function ouvrirBoite() { $('zone-import').value = ''; $('boite-import').hidden = false; }
   function fermerBoite() { $('boite-import').hidden = true; $('zone-import').value = ''; }
-  // 📂 tes scripts arrivent par un FICHIER (iCloud Drive), jamais par le presse-papiers :
-  // le presse-papiers contenait n'importe quoi (une phrase sur Time Machine), et la page l'ajoutait comme un texte
+  // 📂 tes scripts sont en ligne à côté du prompteur, CHIFFRÉS : illisibles sans ton code.
+  // Le code ne quitte jamais le téléphone ; le texte n'est déchiffré que dans le téléphone.
+  // (Avant : le presse-papiers collait n'importe quoi, puis un fichier iCloud Drive invisible sans réglage.)
+  var FICHIER_CHIFFRE = 'scripts.chiffre.json';
+  function normaliserCode(c) {
+    return String(c || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+  function octets(b64) {
+    var bin = atob(b64), a = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+    return a;
+  }
+  function dechiffrer(code, p) {
+    var enc = new TextEncoder();
+    return crypto.subtle.importKey('raw', enc.encode(normaliserCode(code)), 'PBKDF2', false, ['deriveKey'])
+      .then(function (base) {
+        return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: octets(p.sel), iterations: p.iter, hash: 'SHA-256' },
+          base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+      })
+      .then(function (cle) { return crypto.subtle.decrypt({ name: 'AES-GCM', iv: octets(p.iv) }, cle, octets(p.donnees)); })
+      .then(function (buf) { return new TextDecoder().decode(buf); });
+  }
+  function demanderCode(message) {
+    $('boite-code').hidden = false; $('code-scripts').value = '';
+    if (message) direImport(message);
+  }
+  function chargerScripts(code) {
+    direImport('Chargement de tes scripts…');
+    fetch(FICHIER_CHIFFRE + '?v=' + Date.now(), { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('absent');
+      return r.json();
+    }).then(function (p) {
+      return dechiffrer(code, p).then(function (texte) {
+        E.codeScripts = normaliserCode(code); sauver();
+        $('boite-code').hidden = true;
+        if (importer(texte) && p.maj) direImport($('info-import').textContent + ' (scripts du ' + p.maj + ')');
+      }, function () {
+        E.codeScripts = ''; sauver();
+        demanderCode('Ce code ne marche pas. Vérifie-le dans ta note « Prompteur à pédale · mode d\'emploi », puis retape-le.');
+      });
+    }).catch(function () {
+      direImport('Tes scripts ne sont pas en ligne pour l\'instant, ou le réseau ne répond pas. Réessaie, ou demande à Polly « mets à jour mes scripts ».');
+    });
+  }
   $('charger').addEventListener('click', function () {
-    $('info-import').hidden = true; $('fichier-scripts').value = ''; $('fichier-scripts').click();
+    $('info-import').hidden = true;
+    if (!window.crypto || !crypto.subtle) { direImport('Ce navigateur ne sait pas ouvrir tes scripts. Ouvre le prompteur dans Safari.'); return; }
+    if (E.codeScripts) chargerScripts(E.codeScripts); else demanderCode();
   });
-  $('fichier-scripts').addEventListener('change', function (e) {
-    var fichier = e.target.files && e.target.files[0];
-    if (!fichier) return;
-    var lecteur = new FileReader();
-    lecteur.onload = function () {
-      var contenu = String(lecteur.result || '');
-      var r = lireImport(contenu);
-      if (!r.scripts || !r.scripts.length) {
-        direImport('Ce fichier ne contient pas tes scripts. Choisis « Mes scripts.txt », dans iCloud Drive, dossier Prompteur.');
-        return;
-      }
-      importer(contenu);
-    };
-    lecteur.onerror = function () { direImport('Le fichier n\'a pas pu être lu. Réessaie, ou demande à Polly de le refaire.'); };
-    lecteur.readAsText(fichier, 'utf-8');
+  $('valider-code').addEventListener('click', function () {
+    var c = $('code-scripts').value;
+    if (!normaliserCode(c)) { direImport('Tape d\'abord le code de ta note.'); return; }
+    chargerScripts(c);
   });
   // coller à la main : seulement ce que tu colles toi-même dans le cadre
   $('importer').addEventListener('click', function () { $('info-import').hidden = true; ouvrirBoite(); });
