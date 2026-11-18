@@ -59,6 +59,11 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 .interrupteur{width:26px;height:26px;accent-color:var(--accent)}
 .note{color:var(--doux);font-size:14px;line-height:1.4;margin:8px 0}
 .note.alerte{color:#ffb4a8}
+.liste-textes{display:flex;flex-direction:column;gap:6px;max-height:34vh;overflow-y:auto;margin:6px 0 10px}
+.texte-ligne{text-align:left;width:100%;font-size:16px}
+.texte-ligne.actif{border-color:var(--accent);background:#241b3a;font-weight:700}
+.titre-section{font-weight:700;margin:12px 0 0}
+button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
 #panneau-pedale{background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:14px;margin:10px 0}
 #touche-recue{font-size:22px;font-weight:700;margin:8px 0;min-height:30px}
 .installer{background:#241b3a;border:1px solid var(--accent);border-radius:12px;padding:12px 14px;margin:0 0 12px;font-size:15px;line-height:1.45}
@@ -130,11 +135,11 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     </ol>
     <button id="masquer-installer">J'ai compris</button>
   </div>
-  <div class="ligne">
-    <select id="liste" aria-label="Mes textes"></select>
-    <button id="nouveau">Nouveau</button>
-    <button id="supprimer">Supprimer</button>
-  </div>
+  <div class="ligne"><button id="importer" class="large importer">📋 Coller depuis Notes</button></div>
+  <p class="note" id="info-import" hidden></p>
+  <div class="titre-section">Mes textes</div>
+  <div id="liste-textes" class="liste-textes"></div>
+  <div class="ligne"><button id="nouveau" class="large">Nouveau texte</button><button id="supprimer" class="large">Supprimer</button></div>
   <textarea id="texte" placeholder="Colle ici ton texte, depuis Notes par exemple."></textarea>
   <p class="note">Les textes restent dans ce téléphone. Garde l'original dans Notes : ici, c'est une copie.</p>
 
@@ -145,6 +150,8 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     <button data-regle="vitesse" data-pas="-1" aria-label="Moins vite">−</button><span class="valeur" id="v-vitesse"></span>
     <button data-regle="vitesse" data-pas="1" aria-label="Plus vite">+</button></span></div>
   <label class="reglage"><span>Compte à rebours de 3 secondes</span><input type="checkbox" id="avec-decompte" class="interrupteur"></label>
+  <label class="reglage"><span>Son nettoyé (retire l'écho et le bruit de fond)</span><input type="checkbox" id="son-nettoye" class="interrupteur"></label>
+  <label class="reglage" id="ligne-lissage"><span>Lissage de peau léger</span><input type="checkbox" id="lissage" class="interrupteur"></label>
   <label class="reglage"><span>Miroir (seulement pour une vitre de prompteur)</span><input type="checkbox" id="miroir" class="interrupteur"></label>
 
   <div class="ligne"><button id="ouvrir-pedale" class="large">Régler ma pédale</button></div>
@@ -162,7 +169,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   <p class="note alerte" id="info-https" hidden>Pour filmer, la page doit être ouverte à une adresse sécurisée, qui commence par https. À cette adresse-ci, seule la lecture sans filmer marche.</p>
   <div class="ligne"><button class="principal" id="filmer">Filmer avec le texte</button></div>
   <div class="ligne"><button id="lire" class="large">Lire sans filmer</button></div>
-  <p class="note" id="version">Version du 17/11 à 19h08</p>
+  <p class="note" id="version">Version du 18/11 à 08h54</p>
 </section>
 
 <section id="lecture" hidden>
@@ -223,7 +230,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   function etatInitial() {
     var id = nouvelId();
     return { textes: [{ id: id, texte: '' }], courant: id, taille: 36, vitesse: 3,
-             miroir: false, decompte: true, zoom: 1, bande: 32, fond: 1, touches: copie(DEFAUT_TOUCHES) };
+             miroir: false, decompte: true, zoom: 1, bande: 32, fond: 1, son: false, lissage: false, touches: copie(DEFAUT_TOUCHES) };
   }
   function charger() {
     var base = etatInitial();
@@ -248,6 +255,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     E.courant = E.textes[0].id; return E.textes[0];
   }
   function titre(t) {
+    if (t.titre) return t.titre;
     var lignes = (t.texte || '').split('\n');
     for (var i = 0; i < lignes.length; i++) {
       var l = lignes[i].trim();
@@ -256,20 +264,89 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     return 'Texte vide';
   }
   function majListe() {
-    var sel = $('liste'); sel.innerHTML = '';
+    var boite = $('liste-textes'); boite.innerHTML = '';
     E.textes.forEach(function (t) {
-      var o = document.createElement('option'); o.value = t.id; o.textContent = titre(t); sel.appendChild(o);
+      var b = document.createElement('button');
+      b.className = 'texte-ligne' + (t.id === texteCourant().id ? ' actif' : '');
+      b.textContent = titre(t);
+      b.addEventListener('click', function () { E.courant = t.id; sauver(); majListe(); afficherTexte(); });
+      boite.appendChild(b);
     });
-    sel.value = texteCourant().id;
   }
   function afficherTexte() { $('texte').value = texteCourant().texte; }
 
-  $('liste').addEventListener('change', function (e) { E.courant = e.target.value; sauver(); afficherTexte(); });
   var minuterie = null;
   $('texte').addEventListener('input', function (e) {
     texteCourant().texte = e.target.value;
     clearTimeout(minuterie);
     minuterie = setTimeout(function () { sauver(); majListe(); }, 400);
+  });
+  var MARQUE_PAQUET = '=== PROMPTEUR · NOTES ===', SEPARATEUR = '=== NOTE ===';
+  // une note « À TOURNER » : titre = 1re ligne ; on ne garde que ce qui suit « TEXTE À DIRE » ; un ÉPISODE = un texte
+  function lireNote(brut) {
+    var lignes = brut.replace(/\r/g, '').split('\n'), titreNote = '', i, k;
+    for (k = 0; k < lignes.length && !titreNote; k++) titreNote = lignes[k].trim();
+    for (i = 0; i < lignes.length; i++) if (/TEXTE\s+À\s+DIRE/i.test(lignes[i])) break;
+    if (i >= lignes.length) return null;
+    var corps = lignes.slice(i + 1), sortie = [], courant = null;
+    corps.forEach(function (l) {
+      var m = /^\s*ÉPISODE\s+(\d+)\s*(.*)$/i.exec(l);
+      if (m) { courant = { titre: titreNote + ' · épisode ' + m[1], lignes: [] }; sortie.push(courant); return; }
+      if (!courant) { courant = { titre: titreNote, lignes: [] }; sortie.push(courant); }
+      courant.lignes.push(l);
+    });
+    return sortie.map(function (x) { return { titre: x.titre, texte: x.lignes.join('\n').trim() }; })
+                 .filter(function (x) { return x.texte; });
+  }
+  function lireImport(brut) {
+    var t = (brut || '').trim();
+    if (!t) return { vide: true };
+    if (t.indexOf(MARQUE_PAQUET) === 0) {
+      var tout = [];
+      t.slice(MARQUE_PAQUET.length).split(SEPARATEUR).forEach(function (n) { var r = lireNote(n.trim()); if (r) tout = tout.concat(r); });
+      return { scripts: tout, paquet: true };
+    }
+    var une = lireNote(t);
+    if (une && une.length) return { scripts: une };
+    return { simple: t };
+  }
+  function direImport(m) { $('info-import').textContent = m; $('info-import').hidden = false; }
+  function importer(brut, depuisLaCase) {
+    var r = lireImport(brut);
+    if (r.vide) { direImport('Rien à coller : copie d\'abord une note dans Notes (Tout sélectionner, Copier).'); return false; }
+    if (r.simple) {
+      if (depuisLaCase) return false;
+      var n = { id: nouvelId(), texte: r.simple }; E.textes.unshift(n); E.courant = n.id;
+      sauver(); majListe(); afficherTexte(); direImport('Texte collé, ajouté en haut de la liste.'); return true;
+    }
+    var nouveaux = 0, misAJour = 0, ordre = [];
+    r.scripts.forEach(function (sc) {
+      var deja = E.textes.filter(function (x) { return x.titre === sc.titre; })[0];
+      if (deja) { if (deja.texte !== sc.texte) { deja.texte = sc.texte; misAJour++; } ordre.push(deja); }
+      else { var n = { id: nouvelId(), titre: sc.titre, texte: sc.texte }; nouveaux++; ordre.push(n); }
+    });
+    var ids = ordre.map(function (x) { return x.id; });
+    E.textes = ordre.concat(E.textes.filter(function (x) { return ids.indexOf(x.id) < 0 && (x.texte.trim() || x.titre); }));
+    if (!E.textes.length) E.textes = [{ id: nouvelId(), texte: '' }];
+    E.courant = ordre[0].id; sauver(); majListe(); afficherTexte();
+    direImport(r.scripts.length + ' texte(s) prêts : ' + nouveaux + ' nouveau(x), ' + misAJour + ' mis à jour. Touche un titre pour le choisir.');
+    return true;
+  }
+  $('importer').addEventListener('click', function () {
+    $('info-import').hidden = true;
+    var depuisLaCase = function () {
+      var c = texteCourant();
+      if (importer(c.texte, true)) {
+        if (!c.titre) E.textes = E.textes.filter(function (x) { return x.id !== c.id; });   // la case ne servait qu'à transporter
+        if (!E.textes.length) E.textes = [{ id: nouvelId(), texte: '' }];
+        if (!E.textes.some(function (x) { return x.id === E.courant; })) E.courant = E.textes[0].id;
+        sauver(); majListe(); afficherTexte(); return;
+      }
+      direImport('Ton iPhone n\'a pas donné le presse-papiers. Touche la grande case, Coller, puis à nouveau « Coller depuis Notes ».');
+    };
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      navigator.clipboard.readText().then(function (t) { importer(t, false); }).catch(depuisLaCase);
+    } else depuisLaCase();
   });
   $('nouveau').addEventListener('click', function () {
     var t = { id: nouvelId(), texte: '' };
@@ -295,6 +372,8 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
     appliquerBande();
     $('miroir').checked = E.miroir;
     $('avec-decompte').checked = E.decompte;
+    $('son-nettoye').checked = !!E.son;
+    $('lissage').checked = !!E.lissage;
     document.documentElement.style.setProperty('--taille', E.taille + 'px');
     lecture.classList.toggle('miroir', E.miroir);
   }
@@ -309,6 +388,11 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   });
   $('miroir').addEventListener('change', function (e) { E.miroir = e.target.checked; sauver(); majReglages(); });
   $('avec-decompte').addEventListener('change', function (e) { E.decompte = e.target.checked; sauver(); });
+  $('son-nettoye').addEventListener('change', function (e) { E.son = e.target.checked; sauver(); });
+  $('lissage').addEventListener('change', function (e) { E.lissage = e.target.checked; sauver(); });
+  // le lissage passe par un filtre de dessin que certains téléphones n'ont pas : on ne promet pas ce qui ne marchera pas
+  var filtreOk = typeof CanvasRenderingContext2D !== 'undefined' && 'filter' in CanvasRenderingContext2D.prototype;
+  if (!filtreOk) { $('lissage').disabled = true; $('ligne-lissage').querySelector('span').textContent = 'Lissage de peau léger (pas disponible sur ce téléphone)'; }
 
   // ── défilement du texte ─────────────────────────────────────────────
   var lecture = $('lecture'), defile = $('defile'), contenu = $('contenu'), video = $('camera');
@@ -469,7 +553,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   }
   function ouvrirFlux(enHauteur) {
     return navigator.mediaDevices.getUserMedia({
-      video: contraintesVideo(enHauteur), audio: { echoCancellation: false, noiseSuppression: false }
+      video: contraintesVideo(enHauteur), audio: { echoCancellation: !!E.son, noiseSuppression: !!E.son, autoGainControl: !!E.son }
     }).then(function (f) {
       flux = f; video.srcObject = f; lecture.classList.toggle('selfie', faceAvant);
       var p = video.play(); if (p && p.catch) p.catch(function () {});
@@ -522,6 +606,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
   function dessiner() {
     if (!flux) { dessinEnCours = false; return; }
     var sw = video.videoWidth, sh = video.videoHeight;
+    if (filtreOk) pinceau.filter = E.lissage ? 'blur(0.6px) brightness(1.04) contrast(0.97) saturate(1.04)' : 'none';
     if (sw && sh) { var c = cadrage(sw, sh); pinceau.drawImage(video, c.x, c.y, c.w, c.h, 0, 0, toile.width, toile.height); }
     requestAnimationFrame(dessiner);
   }
