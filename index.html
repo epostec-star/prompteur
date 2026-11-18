@@ -63,6 +63,7 @@ textarea{width:100%;min-height:32vh;font:inherit;font-size:17px;line-height:1.45
 .texte-ligne{text-align:left;width:100%;font-size:16px}
 .texte-ligne.actif{border-color:var(--accent);background:#241b3a;font-weight:700}
 .titre-section{font-weight:700;margin:12px 0 0}
+#zone-import{min-height:96px}
 button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
 #panneau-pedale{background:var(--carte);border:1px solid var(--bord);border-radius:12px;padding:14px;margin:10px 0}
 #touche-recue{font-size:22px;font-weight:700;margin:8px 0;min-height:30px}
@@ -137,6 +138,11 @@ button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
   </div>
   <div class="ligne"><button id="importer" class="large importer">📋 Coller depuis Notes</button></div>
   <p class="note" id="info-import" hidden></p>
+  <div id="boite-import" hidden>
+    <p class="note">Si l'iPhone affiche une petite bulle « Coller », touche-la. Sinon, appuie longuement dans le cadre ci-dessous, puis Coller : l'import se fait tout seul.</p>
+    <textarea id="zone-import" placeholder="Appuie longuement ici, puis Coller"></textarea>
+    <div class="ligne"><button id="valider-import" class="large">Importer ce qui est collé</button><button id="fermer-import" class="large">Fermer</button></div>
+  </div>
   <div class="titre-section">Mes textes</div>
   <div id="liste-textes" class="liste-textes"></div>
   <div class="ligne"><button id="nouveau" class="large">Nouveau texte</button><button id="supprimer" class="large">Supprimer</button></div>
@@ -169,7 +175,7 @@ button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
   <p class="note alerte" id="info-https" hidden>Pour filmer, la page doit être ouverte à une adresse sécurisée, qui commence par https. À cette adresse-ci, seule la lecture sans filmer marche.</p>
   <div class="ligne"><button class="principal" id="filmer">Filmer avec le texte</button></div>
   <div class="ligne"><button id="lire" class="large">Lire sans filmer</button></div>
-  <p class="note" id="version">Version du 18/11 à 08h54</p>
+  <p class="note" id="version">Version du 18/11 à 10h03</p>
 </section>
 
 <section id="lecture" hidden>
@@ -301,6 +307,8 @@ button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
   function lireImport(brut) {
     var t = (brut || '').trim();
     if (!t) return { vide: true };
+    var p = t.indexOf(MARQUE_PAQUET);
+    if (p > 0) t = t.slice(p);             // copié depuis une note : son titre passe avant le paquet
     if (t.indexOf(MARQUE_PAQUET) === 0) {
       var tout = [];
       t.slice(MARQUE_PAQUET.length).split(SEPARATEUR).forEach(function (n) { var r = lireNote(n.trim()); if (r) tout = tout.concat(r); });
@@ -311,11 +319,10 @@ button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
     return { simple: t };
   }
   function direImport(m) { $('info-import').textContent = m; $('info-import').hidden = false; }
-  function importer(brut, depuisLaCase) {
+  function importer(brut) {
     var r = lireImport(brut);
     if (r.vide) { direImport('Rien à coller : copie d\'abord une note dans Notes (Tout sélectionner, Copier).'); return false; }
     if (r.simple) {
-      if (depuisLaCase) return false;
       var n = { id: nouvelId(), texte: r.simple }; E.textes.unshift(n); E.courant = n.id;
       sauver(); majListe(); afficherTexte(); direImport('Texte collé, ajouté en haut de la liste.'); return true;
     }
@@ -332,22 +339,24 @@ button.importer{background:#241b3a;border-color:var(--accent);font-weight:700}
     direImport(r.scripts.length + ' texte(s) prêts : ' + nouveaux + ' nouveau(x), ' + misAJour + ' mis à jour. Touche un titre pour le choisir.');
     return true;
   }
+  // on ouvre TOUJOURS le cadre de collage : la bulle « Coller » de l'iPhone se rate, et alors rien ne se passait
+  function ouvrirBoite() { $('zone-import').value = ''; $('boite-import').hidden = false; }
+  function fermerBoite() { $('boite-import').hidden = true; $('zone-import').value = ''; }
   $('importer').addEventListener('click', function () {
     $('info-import').hidden = true;
-    var depuisLaCase = function () {
-      var c = texteCourant();
-      if (importer(c.texte, true)) {
-        if (!c.titre) E.textes = E.textes.filter(function (x) { return x.id !== c.id; });   // la case ne servait qu'à transporter
-        if (!E.textes.length) E.textes = [{ id: nouvelId(), texte: '' }];
-        if (!E.textes.some(function (x) { return x.id === E.courant; })) E.courant = E.textes[0].id;
-        sauver(); majListe(); afficherTexte(); return;
-      }
-      direImport('Ton iPhone n\'a pas donné le presse-papiers. Touche la grande case, Coller, puis à nouveau « Coller depuis Notes ».');
-    };
+    ouvrirBoite();
     if (navigator.clipboard && navigator.clipboard.readText) {
-      navigator.clipboard.readText().then(function (t) { importer(t, false); }).catch(depuisLaCase);
-    } else depuisLaCase();
+      navigator.clipboard.readText().then(function (t) {
+        if (!t || !t.trim()) { direImport('Rien à coller pour l\'instant : copie d\'abord une note dans Notes, ou colle-la dans le cadre ci-dessous.'); return; }
+        if (importer(t)) fermerBoite();
+      }).catch(function () { /* le cadre est déjà ouvert : on colle à la main */ });
+    }
   });
+  $('zone-import').addEventListener('paste', function () {
+    setTimeout(function () { if (importer($('zone-import').value)) fermerBoite(); }, 60);
+  });
+  $('valider-import').addEventListener('click', function () { if (importer($('zone-import').value)) fermerBoite(); });
+  $('fermer-import').addEventListener('click', fermerBoite);
   $('nouveau').addEventListener('click', function () {
     var t = { id: nouvelId(), texte: '' };
     E.textes.unshift(t); E.courant = t.id; sauver(); majListe(); afficherTexte(); $('texte').focus();
